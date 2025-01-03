@@ -4,16 +4,49 @@ import cv2
 from PIL import Image, ImageTk
 import numpy as np
 
-global last_frame1                                   
+global last_frame1
 last_frame1 = np.zeros((480, 640, 3), dtype=np.uint8)
-global last_frame2                                      
-last_frame2 = np.zeros((480, 640, 3), dtype=np.uint8)
 global cap1
-global cap2
 paused = False  # Variable to pause/play video
 
-cap1 = cv2.VideoCapture("C:\\Users\\hegde\\OneDrive\\Desktop\\Road Lane Detection\\vid3.mp4")  # Input video path
-cap2 = cv2.VideoCapture("C:\\Users\\hegde\\OneDrive\\Desktop\\Road Lane Detection\\out.mp4")   # Resultant video path
+cap1 = cv2.VideoCapture("C:\\Users\\hegde\\OneDrive\\Desktop\\Road Lane Detection\\vid1.mp4")  # Input video path
+
+def lane_detection(image):
+    # Convert the image to grayscale
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    
+    # Apply Gaussian Blur to reduce noise
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+    
+    # Perform Canny edge detection with dynamic thresholds
+    median_val = np.median(blurred)
+    lower_threshold = int(max(0, 0.7 * median_val))
+    upper_threshold = int(min(255, 1.3 * median_val))
+    edges = cv2.Canny(blurred, lower_threshold, upper_threshold)
+    
+    # Define the Region of Interest (ROI)
+    height, width = edges.shape
+    roi_vertices = np.array([[
+        (width * 0.1, height), 
+        (width * 0.45, height * 0.6),
+        (width * 0.55, height * 0.6), 
+        (width * 0.9, height)
+    ]], np.int32)
+
+    mask = np.zeros_like(edges)
+    cv2.fillPoly(mask, roi_vertices, 255)
+    masked_edges = cv2.bitwise_and(edges, mask)
+    
+    # Use Hough Line Transform to detect lines
+    lines = cv2.HoughLinesP(masked_edges, 1, np.pi / 180, threshold=50, minLineLength=50, maxLineGap=100)
+    
+    # Draw the detected lines on the image
+    if lines is not None:
+        for line in lines:
+            x1, y1, x2, y2 = line[0]
+            cv2.line(image, (x1, y1), (x2, y2), (0, 255, 0), 5)
+    
+    return image
 
 def show_vid():                                       
     if not cap1.isOpened():                             
@@ -26,32 +59,24 @@ def show_vid():
             frame1 = cv2.resize(frame1, (400, 500))
             global last_frame1
             last_frame1 = frame1.copy()
+            
+            # Apply lane detection on the original frame
+            detected_frame = lane_detection(last_frame1.copy())
+
+            # Convert both original and detected frames for display
             pic = cv2.cvtColor(last_frame1, cv2.COLOR_BGR2RGB)     
             img = Image.fromarray(pic)
             imgtk = ImageTk.PhotoImage(image=img)
             lmain.imgtk = imgtk
             lmain.configure(image=imgtk)
-    
-    lmain.after(10, show_vid)  # Refresh video every 10ms
-
-def show_vid2():
-    if not cap2.isOpened():                             
-        print("Cannot open the result video")
-        return
-    if not paused:
-        flag2, frame2 = cap2.read()
-        
-        if flag2:
-            frame2 = cv2.resize(frame2, (400, 500))
-            global last_frame2
-            last_frame2 = frame2.copy()
-            pic2 = cv2.cvtColor(last_frame2, cv2.COLOR_BGR2RGB)
+            
+            pic2 = cv2.cvtColor(detected_frame, cv2.COLOR_BGR2RGB)     
             img2 = Image.fromarray(pic2)
             img2tk = ImageTk.PhotoImage(image=img2)
             lmain2.img2tk = img2tk
             lmain2.configure(image=img2tk)
     
-    lmain2.after(10, show_vid2)  # Refresh video every 10ms
+    lmain.after(10, show_vid)  # Refresh video every 10ms
 
 # Function to pause or play the videos
 def toggle_pause():
@@ -95,11 +120,9 @@ if __name__ == '__main__':
 
     # Start showing videos
     show_vid()
-    show_vid2()
 
     root.geometry("900x700")  # Set window size
     root.resizable(True, True)  # Allow window to be resizable
     root.mainloop()  # Start GUI loop
     
     cap1.release()
-    cap2.release()
